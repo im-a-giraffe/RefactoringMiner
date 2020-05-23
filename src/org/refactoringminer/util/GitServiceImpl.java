@@ -250,7 +250,7 @@ public class GitServiceImpl implements GitService {
 		ObjectId from = repository.resolve(startCommitId);
 		ObjectId to = repository.resolve(endCommitId);
 		try (Git git = new Git(repository)) {
-			List<RevCommit> revCommits = StreamSupport.stream(git.log().addRange(from, to).call()
+			List<RevCommit> revCommits = StreamSupport.stream(git.log().add(repository.resolve("refs/heads/master")).addRange(from, to).call()
 					.spliterator(), false)
 					.filter(r -> r.getParentCount() == 1)
 			        .collect(Collectors.toList());

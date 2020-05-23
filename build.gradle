@@ -1,11 +1,12 @@
 apply plugin: 'java'
 apply plugin: 'application'
 apply plugin: 'eclipse'
+apply plugin: 'maven-publish'
 
 apply plugin: "maven"
 
 group = "org.refactoringminer"
-version = "1.0"
+version = "1.5"
 
 sourceSets {
     main {

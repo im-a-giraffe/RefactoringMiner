@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -148,7 +149,7 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 			long time2 = System.currentTimeMillis();
 			if ((time2 - time) > 20000) {
 				time = time2;
-				logger.info(String.format("Processing %s [Commits: %d, Errors: %d, Refactorings: %d]", projectName, commitsCount, errorCommitsCount, refactoringsCount));
+				//logger.info(String.format("Processing %s [Commits: %d, Errors: %d, Refactorings: %d]", projectName, commitsCount, errorCommitsCount, refactoringsCount));
 			}
 		}
 
@@ -194,7 +195,7 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 
 	private void populateFileContents(Repository repository, RevCommit commit,
 			List<String> filePaths, Map<String, String> fileContents, Set<String> repositoryDirectories) throws Exception {
-		logger.info("Processing {} {} ...", repository.getDirectory().getParent().toString(), commit.getName());
+		//logger.info("Processing {} {} ...", repository.getDirectory().getParent().toString(), commit.getName());
 		RevTree parentTree = commit.getTree();
 		try (TreeWalk treeWalk = new TreeWalk(repository)) {
 			treeWalk.addTree(parentTree);
@@ -287,7 +288,7 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 
 	private String populateWithGitHubAPI(String cloneURL, String currentCommitId,
 			List<String> filesBefore, List<String> filesCurrent, Map<String, String> renamedFilesHint) throws IOException {
-		logger.info("Processing {} {} ...", cloneURL, currentCommitId);
+		//logger.info("Processing {} {} ...", cloneURL, currentCommitId);
 		GitHub gitHub = connectToGitHub();
 		//https://github.com/ is 19 chars
 		String repoName = cloneURL.substring(19, cloneURL.indexOf(".git"));
@@ -410,6 +411,7 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 			}
 			else {
 				logger.warn(String.format("Ignored revision %s because it has no parent", commitId));
+				handler.onIgnore(commitId);
 			}
 		} catch (MissingObjectException moe) {
 			this.detectRefactorings(handler, projectFolder, cloneURL, commitId);
@@ -445,6 +447,65 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 	@Override
 	public String getConfigId() {
 	    return "RM1";
+	}
+
+	@Override
+	public void detectAllByCommitIds(Repository repository, List<String> commitIds, RefactoringHandler handler) {
+		if(commitIds.isEmpty()) return;
+		String cloneURL = repository.getConfig().getString("remote", "origin", "url");
+		File metadataFolder = repository.getDirectory();
+		File projectFolder = metadataFolder.getParentFile();
+		GitService gitService = new GitServiceImpl();
+
+		Set<ObjectId> resolvedIds = new HashSet<>();
+		for (String id : commitIds) {
+			try {
+				ObjectId resolve = repository.resolve(id);
+				resolvedIds.add(resolve);
+			} catch(Exception e) {
+				e.printStackTrace();
+			}
+		}
+		if(resolvedIds.isEmpty()) return;
+
+		RevWalk walk = new RevWalk(repository);
+		try {
+			walk.markStart(walk.parseCommit(repository.resolve(commitIds.get(0))));
+		} catch (IOException e) {
+			e.printStackTrace();
+			logger.error("Commit not found within repository. Could not be resolved.");
+			return;
+		}
+		int iterationCount = 0;
+		for(RevCommit r: walk) {
+			if(resolvedIds.contains(r.getId())) {
+				if (r.getParentCount() > 0) {
+					try {
+						walk.parseCommit(r.getParent(0));
+						this.detectRefactorings(gitService, repository, handler, projectFolder, r);
+						logger.info("Resolved commit " + iterationCount + "/" + commitIds.size() + " (" + r.name() + ")");
+						resolvedIds.remove(r.getId());
+					} catch (MissingObjectException moe) {
+						this.detectRefactorings(handler, projectFolder, cloneURL, r.name());
+					} catch (RefactoringMinerTimedOutException e) {
+						logger.warn(String.format("Ignored revision %s due to timeout", r.name()), e);
+					} catch (Exception e) {
+						logger.warn(String.format("Ignored revision %s due to error", r.name()), e);
+						handler.handleException(r.name(), e);
+					}
+				}
+				else {
+					logger.warn(String.format("Ignored revision %s because it has no parent", r.name()));
+					handler.onIgnore(r.name());
+				}
+				iterationCount++;
+			}
+		}
+
+		walk.close();
+		walk.dispose();
+		logger.warn("Unresolvable commit count: " + resolvedIds.size());
+		handler.onFinish(0,commitIds.size(),0);
 	}
 
 	@Override
@@ -550,7 +611,7 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 	private void populateWithGitHubAPI(String cloneURL, String currentCommitId,
 			Map<String, String> filesBefore, Map<String, String> filesCurrent, Map<String, String> renamedFilesHint,
 			Set<String> repositoryDirectoriesBefore, Set<String> repositoryDirectoriesCurrent) throws IOException, InterruptedException {
-		logger.info("Processing {} {} ...", cloneURL, currentCommitId);
+		//logger.info("Processing {} {} ...", cloneURL, currentCommitId);
 		GitHub gitHub = connectToGitHub();
 		//https://github.com/ is 19 chars
 		String repoName = cloneURL.substring(19, cloneURL.indexOf(".git"));
