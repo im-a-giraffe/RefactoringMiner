@@ -38,12 +38,15 @@ import java.util.zip.ZipFile;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevSort;
 import org.eclipse.jgit.revwalk.RevTree;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.revwalk.filter.RevFilter;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.kohsuke.github.GHCommit;
 import org.kohsuke.github.GHPullRequest;
@@ -427,7 +430,10 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 
 		RevWalk walk = new RevWalk(repository);
 		try {
-			walk.markStart(walk.parseCommit(repository.resolve(commitIds.get(0))));
+			walk.markStart(walk.parseCommit(repository.resolve(Constants.HEAD)));
+			walk.setRevFilter(RevFilter.NO_MERGES);
+			walk.sort(RevSort.COMMIT_TIME_DESC);
+			walk.sort(RevSort.TOPO);
 		} catch (IOException e) {
 			e.printStackTrace();
 			logger.error("Commit not found within repository. Could not be resolved.");
@@ -443,7 +449,8 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 						logger.info("Resolved commit " + iterationCount + "/" + commitIds.size() + " (" + r.name() + ")");
 						resolvedIds.remove(r.getId());
 					} catch (MissingObjectException moe) {
-						this.detectRefactorings(handler, projectFolder, cloneURL, r.name());
+						logger.warn(moe.getMessage());
+						//this.detectRefactorings(handler, projectFolder, cloneURL, r.name());
 					} catch (RefactoringMinerTimedOutException e) {
 						logger.warn(String.format("Ignored revision %s due to timeout", r.name()), e);
 					} catch (Exception e) {
